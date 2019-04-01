@@ -1,5 +1,5 @@
 ### Sample symfony app deployment with ansible
-This repo shows how to deploy symfony applicaton on ubuntu 18. Virtual machine for deployment are created
+This repo shows how to deploy symfony applicaton on ubuntu 18. A virtual machine for deployment is created
 using Vagrant.
 
 #### Prerequisites
