@@ -13,7 +13,7 @@ using Vagrant.
 1. Create virtual machine:
 
 ```
-vagrnant up --provider libvirt
+vagrant up --provider libvirt
 ```
 
 2. Run ansible to setup VM and deploy symfony application:
