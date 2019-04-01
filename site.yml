@@ -1,0 +1,132 @@
+- name: Main
+  hosts: symfony
+  become: yes
+  gather_facts: no
+  vars:
+    db_user: symfony
+    db_name: blog
+    db_password: 12345
+  tasks:
+    - name: Install python and python mysql library
+      raw: apt install python python-pymysql -y
+
+    - name: Install needed packages
+      loop:
+        - nginx # web server
+        - mysql-server # database
+        - mysql-client # database client
+        - php-fpm # fastCGI process manager
+        - php-mysql # php support for mysql
+        - php-cli # access php from command line
+        - git # deploy tool
+        - unzip # unarchive zip
+        - php7.2-xml # handle xml
+        - php-mbstring
+      package:
+        name: '{{ item }}'
+
+    - name: Check if composer executable already installed
+      stat:
+        path: /usr/local/bin/composer
+      register: composer_exe
+
+    - name: Download composer installer
+      get_url:
+        url: 'https://getcomposer.org/installer'
+        dest: /etc/composer-setup.php
+        checksum: sha384:48e3236262b34d30969dca3c37281b3b4bbe3221bda826ac6a9a62d6444cdb0dcd0615698a5cbe587c3f0fe57a54d8f5
+      when: not composer_exe.stat.exists
+
+    - name: Install composer
+      command: php /etc/composer-setup.php --install-dir=/usr/local/bin --filename=composer
+      when: not composer_exe.stat.exists
+
+    - name: Create a new database for application
+      mysql_db:
+        name: '{{ db_name }}'
+        state: present
+        login_unix_socket: /var/run/mysqld/mysqld.sock
+
+    - name: Create a database user for application
+      mysql_user:
+        name: '{{ db_user }}'
+        password: '{{ db_password }}'
+        priv: '{{ db_name }}.*:ALL'
+        state: present
+        login_unix_socket: /var/run/mysqld/mysqld.sock
+
+    - name: Create nginx config for application
+      template:
+        src: app_nginx_conf.j2
+        dest: /etc/nginx/sites-available/blog.conf
+      notify:
+        - restart nginx 
+      tags:
+        - deploy
+
+    - name: Create symlink to nginx config
+      file:
+        src: /etc/nginx/sites-available/blog.conf
+        dest: /etc/nginx/sites-enabled/blog.conf
+        state: link
+      notify:
+        - restart nginx 
+      tags:
+        - deploy
+
+    - name: Create applicaton directory
+      file:
+        path: /var/www/symfony-blog
+        state: directory
+        owner: vagrant
+      tags:
+        - deploy
+
+    - name: Deploy application using git
+      become: no
+      git:
+        repo: 'https://github.com/yemiwebby/symfony-blog.git'
+        dest: /var/www/symfony-blog
+        version: master
+      notify:
+        - restart nginx 
+      tags:
+        - deploy
+
+    - name: Create .env file with env variables
+      become: no
+      template:
+        src: app_env.j2
+        dest: /var/www/symfony-blog/.env
+      tags:
+        - deploy
+
+    - name: Install php dependencies
+      become: no
+      command: composer install
+      args:
+        chdir: /var/www/symfony-blog
+      tags:
+        - deploy
+
+    - name: Update database schema
+      become: no
+      command: php bin/console doctrine:schema:update --force
+      args:
+        chdir: /var/www/symfony-blog
+      tags:
+        - deploy
+
+    - name: Clear application cache
+      become: no
+      command: php bin/console cache:clear
+      args:
+        chdir: /var/www/symfony-blog
+      tags:
+        - deploy
+
+  handlers:
+  - name: restart nginx
+    service:
+      name: nginx
+      state: restarted
